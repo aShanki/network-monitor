@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	snapshotLen int32 = 1024
-	promiscuous bool  = true
+	snapshotLen int32         = 1024
+	promiscuous bool          = true
 	timeout     time.Duration = -1 * time.Second // Negative timeout means wait indefinitely
 	// Simple BPF filter to capture only IPv4 and IPv6 traffic.
 	// Adjust as needed, e.g., "tcp port 80"
-	bpfFilter string = "ip or ip6" 
+	bpfFilter string = "ip or ip6"
 )
 
 // StartCapture opens the specified network interface or finds the first available one
@@ -38,22 +38,21 @@ func StartCapture(interfaceName string) (*gopacket.PacketSource, *pcap.Handle, e
 
 		// Use the first available device that's not loopback
 		for _, device := range devices {
-            // Skip loopback interfaces
-            if (device.Flags & pcap.FlagLoopback) == pcap.FlagLoopback {
-                continue
-            }
-            // Skip interfaces without IP addresses (often virtual)
-            if len(device.Addresses) == 0 {
-                continue
-            }
-			log.Printf("No interface specified, using first valid device found: %s
-", device.Name)
+			// Skip loopback interfaces
+			if (device.Flags & pcap.FlagLoopback) == pcap.FlagLoopback {
+				continue
+			}
+			// Skip interfaces without IP addresses (often virtual)
+			if len(device.Addresses) == 0 {
+				continue
+			}
+			log.Printf("No interface specified, using first valid device found: %s", device.Name)
 			interfaceName = device.Name
 			break // Use the first non-loopback interface with an address
 		}
 		if interfaceName == "" {
-             return nil, nil, errors.New("no suitable network interface found (non-loopback with addresses)")
-        }
+			return nil, nil, errors.New("no suitable network interface found (non-loopback with addresses)")
+		}
 	}
 
 	// Open device
@@ -67,8 +66,7 @@ func StartCapture(interfaceName string) (*gopacket.PacketSource, *pcap.Handle, e
 	}
 
 	// Set BPF filter
-	log.Printf("Using BPF filter: %s
-", bpfFilter)
+	log.Printf("Using BPF filter: %s", bpfFilter)
 	err = handle.SetBPFFilter(bpfFilter)
 	if err != nil {
 		handle.Close() // Close handle on error
@@ -77,8 +75,7 @@ func StartCapture(interfaceName string) (*gopacket.PacketSource, *pcap.Handle, e
 
 	// Use the handle as a packet source
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-	log.Printf("Successfully opened interface %s for capture.
-", interfaceName)
+	log.Printf("Successfully opened interface %s for capture.", interfaceName)
 
 	return packetSource, handle, nil
-} 
+}

@@ -1,0 +1,23 @@
+# Example configuration for network-monitor
+# Copy this file to config.yaml and modify as needed.
+
+# Network interface name to monitor.
+# Leave empty ("") to let the application automatically select the first available non-loopback interface.
+# Example: "eth0", "wlan0"
+interface: ""
+
+# Speed threshold in Megabits per second (Mbps).
+# If the network speed drops below this value, a notification may be sent.
+threshold_mbps: 100.0
+
+# Discord Webhook URL for sending notifications.
+# If left empty, notifications will not be sent.
+# Example: "https://discord.com/api/webhooks/..."
+webhook_url: ""
+
+# Monitoring interval in seconds.
+# How often to check the network speed and report top talkers.
+interval_seconds: 60
+
+# Number of top IP addresses (talkers) to report in notifications.
+top_n: 5 
