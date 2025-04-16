@@ -4,18 +4,23 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"sync"
 	"syscall"
+	"time"
 
 	"network-monitor/internal/analysis"
 	"network-monitor/internal/capture"
+	// "network-monitor/internal/discord" // Keep commented until Task 3.6
 )
 
 // Temporary Config struct until Task 3.2 is done
 type TempConfig struct {
 	InterfaceName   string
 	IntervalSeconds int
-	// Add other fields like Threshold, WebhookURL later
+	ThresholdMbps   float64
+	TopN            int
+	// Add WebhookURL later
 }
 
 func main() {
@@ -23,8 +28,10 @@ func main() {
 
 	// TODO: Replace with proper config loading (Task 3.2)
 	cfg := &TempConfig{
-		InterfaceName:   "", // Auto-detect
-		IntervalSeconds: 5,  // Example: 5-second interval
+		InterfaceName:   "",   // Auto-detect
+		IntervalSeconds: 5,    // Example: 5-second interval
+		ThresholdMbps:   10.0, // Example: 10 Mbps threshold
+		TopN:            5,    // Example: Top 5 IPs
 	}
 
 	// Use configured interface name
@@ -77,13 +84,65 @@ func main() {
 	go func() {
 		defer wg.Done()
 		log.Println("Result processing goroutine started.")
+		// Get interval duration from config for speed calculation
+		intervalDuration := time.Duration(cfg.IntervalSeconds) * time.Second
+
 		for intervalData := range resultsChan {
-			// TODO: Implement Task 3.5 (Threshold check, Top Talkers)
-			log.Printf("Received interval data with %d IP entries\n", len(intervalData))
-			// Example: Print the data
-			// for ip, data := range intervalData {
-			// 	 log.Printf("  IP: %s, Bytes: %d\n", ip, data.Bytes)
-			// }
+			// --- Task 3.5 Implementation START ---
+
+			// Calculate total bytes for the interval
+			totalBytes := int64(0)
+			for _, data := range intervalData {
+				totalBytes += data.Bytes
+			}
+
+			// Calculate overall speed for the interval
+			overallSpeedMbps := analysis.CalculateSpeedMbps(totalBytes, intervalDuration)
+			log.Printf("Interval finished. Total Bytes: %d, Overall Speed: %.2f Mbps\n", totalBytes, overallSpeedMbps)
+
+			// Check against threshold
+			if overallSpeedMbps > cfg.ThresholdMbps {
+				log.Printf("ALERT: Overall speed %.2f Mbps exceeded threshold of %.2f Mbps\n", overallSpeedMbps, cfg.ThresholdMbps)
+
+				// Identify Top Talkers
+				type ipTraffic struct {
+					IP    string
+					Bytes int64
+				}
+
+				// Convert map to slice for sorting
+				trafficSlice := make([]ipTraffic, 0, len(intervalData))
+				for ip, data := range intervalData {
+					trafficSlice = append(trafficSlice, ipTraffic{IP: ip, Bytes: data.Bytes})
+				}
+
+				// Sort by bytes descending
+				sort.Slice(trafficSlice, func(i, j int) bool {
+					return trafficSlice[i].Bytes > trafficSlice[j].Bytes
+				})
+
+				// Get Top N
+				numTalkers := cfg.TopN
+				if len(trafficSlice) < numTalkers {
+					numTalkers = len(trafficSlice)
+				}
+				topTalkersSlice := trafficSlice[:numTalkers]
+
+				// Prepare data for notification (IP -> Speed Mbps)
+				topTalkersResult := make(map[string]float64)
+				log.Println("--- Top Talkers ---")
+				for _, talker := range topTalkersSlice {
+					speedMbps := analysis.CalculateSpeedMbps(talker.Bytes, intervalDuration)
+					topTalkersResult[talker.IP] = speedMbps
+					log.Printf("  IP: %s, Speed: %.2f Mbps (Bytes: %d)\n", talker.IP, speedMbps, talker.Bytes)
+				}
+				log.Println("-------------------")
+
+				// TODO: Task 3.6 - Send topTalkersResult to Discord
+				// discord.SendNotification(cfg.WebhookURL, topTalkersResult)
+
+			}
+			// --- Task 3.5 Implementation END ---
 		}
 		log.Println("Result processing goroutine finished.")
 	}()
