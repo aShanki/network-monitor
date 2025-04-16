@@ -28,7 +28,7 @@ A simple Go application to monitor network traffic speed on a specified interfac
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repository-url>
+    git clone https://github.com/aShanki/network-monitor.git
     cd network-monitor
     ```
 2.  **Build the application:**
@@ -154,7 +154,3 @@ scrape_configs:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
-
-## License
-
-(Optional: Add your license information here, e.g., MIT License)
