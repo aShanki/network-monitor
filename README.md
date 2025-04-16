@@ -83,6 +83,52 @@ sudo setcap cap_net_raw,cap_net_admin=eip ./network-monitor
 
 *(Adjust `setcap` command based on your specific OS and security practices)*
 
+## Docker Support
+
+This application can be run as a Docker container using Docker Compose.
+
+### Prerequisites
+
+- Docker and Docker Compose installed on your system.
+
+### Running with Docker Compose
+
+1. **Create a configuration file**:
+   ```bash
+   cp config.yaml.example config.yaml
+   ```
+   Edit the `config.yaml` file to adjust settings as needed.
+
+2. **Start the container**:
+   ```bash
+   docker compose up -d
+   ```
+
+3. **View logs**:
+   ```bash
+   docker compose logs -f
+   ```
+
+4. **Stop the container**:
+   ```bash
+   docker compose down
+   ```
+
+### Configuration with Docker
+
+When running in Docker, the application uses host networking (`network_mode: "host"`) to access the network interfaces directly. This means:
+
+- The network interface specified should be the host's interface name
+- Prometheus metrics will be exposed on the host's network at port 9090 (by default)
+
+You can configure the application using either:
+- The `config.yaml` file mounted into the container
+- Environment variables in the `.env` file
+- Environment variables passed directly to the `docker compose` command:
+  ```bash
+  INTERFACE_NAME=eth0 docker compose up -d
+  ```
+
 ## Prometheus Integration
 
 The application exposes metrics through a Prometheus endpoint that can be used for monitoring and alerting. By default, the metrics are exposed at `http://localhost:9090/metrics`.

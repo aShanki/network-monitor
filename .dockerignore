@@ -1,0 +1,18 @@
+# Git
+.git
+.gitignore
+
+# Built binary
+network-monitor
+
+# Environment variables
+.env
+
+# Editor files
+.vscode/
+.idea/
+
+# Docker files (not needed in the build context)
+Dockerfile
+docker-compose.yml
+.dockerignore 
