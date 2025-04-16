@@ -1,123 +1,85 @@
 # Network Monitor
 
-A simple Go application to monitor network traffic on a specified interface, calculate the throughput, and send notifications to Discord via webhook if a configurable threshold is exceeded. It also reports the top IP addresses contributing to the traffic.
+A simple Go application to monitor network traffic speed on a specified interface and optionally send alerts via webhook.
+
+## Features
+
+*   Monitors network traffic speed (upload/download).
+*   Compares current speed against a configurable threshold (in Mbps).
+*   Reports monitoring results at a regular interval.
+*   Identifies top N network talkers (based on bytes transferred).
+*   Optional webhook integration for alerts when the threshold is exceeded.
+*   Configuration via a YAML file (`config.yaml`), environment variables, or command-line flags.
 
 ## Prerequisites
 
-*   **Go:** Version 1.18 or later (for building the project).
-*   **libpcap development libraries:** Required for packet capturing.
+*   Go 1.24 or later installed ([Go Installation Guide](https://golang.org/doc/install)).
+*   `libpcap` development libraries (needed for `gopacket`).
     *   On Debian/Ubuntu: `sudo apt-get update && sudo apt-get install libpcap-dev`
     *   On Fedora/CentOS/RHEL: `sudo dnf install libpcap-devel`
-    *   On macOS (with Homebrew): `brew install libpcap` (usually included with Xcode Command Line Tools)
+    *   On macOS (with Homebrew): `brew install libpcap`
+
+## Installation
+
+1.  **Clone the repository:**
+    ```bash
+    git clone <your-repository-url>
+    cd network-monitor
+    ```
+2.  **Build the application:**
+    ```bash
+    go build -o network-monitor ./cmd/monitor
+    ```
+    This will create the `network-monitor` executable in the current directory.
 
 ## Configuration
 
-Configuration can be provided via a YAML file, environment variables, or command-line flags. The order of precedence is: Flags > Environment Variables > Config File > Defaults.
+The application uses [Viper](https://github.com/spf13/viper) for configuration management. Configuration can be provided through:
 
-**Configuration File:**
+1.  A `config.yaml` file in the same directory as the executable (or in `$HOME/.network-monitor/`, or `/etc/network-monitor/`).
+2.  Environment variables (prefixed with `NM_`, e.g., `NM_INTERFACE_NAME=eth0`).
+3.  Command-line flags (though currently commented out in `main.go`, Viper might still support them depending on setup).
 
-By default, the application looks for `config.yaml` in the current directory, `$HOME/.config/network-monitor/`, or `/etc/network-monitor/`. You can specify a different path using the `--config` flag.
-
-Example `config.yaml`:
-
-```yaml
-# Network interface to capture packets from.
-# Leave empty ("") to let the program automatically select the first non-loopback interface.
-# Example: "eth0", "enp3s0"
-interface: ""
-
-# Network speed threshold in Mbps.
-# If the overall network speed exceeds this value, a notification is sent.
-threshold_mbps: 100.0
-
-# Discord webhook URL to send notifications to.
-# If empty, notifications are disabled.
-webhook_url: "https://discord.com/api/webhooks/..."
-
-# Time interval in seconds for checking the network speed and sending reports.
-interval_seconds: 60
-
-# Number of top IP addresses (by traffic volume) to include in the notification.
-top_n: 5
-```
-
-**Environment Variables:**
-
-Set environment variables prefixed with `NM_`.
-
-*   `NM_INTERFACE`
-*   `NM_THRESHOLD_MBPS`
-*   `NM_WEBHOOK_URL`
-*   `NM_INTERVAL_SECONDS`
-*   `NM_TOP_N`
-
-Example: `export NM_THRESHOLD_MBPS=150.5`
-
-**Command-line Flags:**
-
-*   `--config`: Path to the configuration file.
-*   `--interface`: Network interface name.
-*   `--threshold_mbps`: Speed threshold in Mbps.
-*   `--webhook_url`: Discord webhook URL.
-*   `--interval_seconds`: Monitoring interval in seconds.
-*   `--top_n`: Number of top talkers to report.
-
-Example: `./monitor --interface eth0 --threshold_mbps 200`
-
-## Build Instructions
-
-1.  Clone the repository (if you haven't already).
-2.  Navigate to the project root directory.
-3.  Build the binary:
-    ```bash
-    go build -o monitor ./cmd/monitor
-    ```
-    This will create an executable file named `monitor` in the current directory.
-
-## Usage Instructions
-
-Running the monitor requires privileges to capture network packets.
-
-**Option 1: Run as root** (Simplest, but less secure)
+A `config.yaml.example` file is provided. Copy it to `config.yaml` and modify it according to your needs:
 
 ```bash
-sudo ./monitor --config /path/to/your/config.yaml
+cp config.yaml.example config.yaml
 ```
-*(Replace `/path/to/your/config.yaml` if you are not using one of the default locations)*
 
-**Option 2: Grant capabilities** (More secure)
+**Key Configuration Options:**
 
-Grant the necessary capabilities to the executable:
+*   `interface_name`: The network interface to monitor (e.g., `eth0`, `en0`). If empty, the application attempts to find the first non-loopback interface.
+*   `threshold_mbps`: The speed threshold in Megabits per second (Mbps).
+*   `interval_seconds`: The monitoring interval in seconds.
+*   `webhook_url`: (Optional) The URL to send a POST request to when the threshold is exceeded.
+*   `top_n`: The number of top talkers (IP addresses) to report based on traffic volume during the interval.
+
+See `internal/config/config.go` and `config.yaml.example` for all options.
+
+## Usage
+
+Run the compiled binary:
 
 ```bash
-sudo setcap cap_net_raw,cap_net_admin=eip ./monitor
+./network-monitor
 ```
 
-Then run the monitor as a regular user:
+The application will load the configuration and start monitoring the specified network interface. Press `Ctrl+C` to stop the monitor gracefully.
+
+Ensure the application has the necessary permissions to capture network traffic. You might need to run it with `sudo` or set appropriate capabilities:
 
 ```bash
-./monitor --config /path/to/your/config.yaml
+sudo setcap cap_net_raw,cap_net_admin=eip ./network-monitor
+# Then run without sudo
+./network-monitor
 ```
 
-The application will then start monitoring the specified network interface and send notifications according to the configuration.
+*(Adjust `setcap` command based on your specific OS and security practices)*
 
-## Example Discord Notification
+## Contributing
 
-When the traffic exceeds the configured threshold, a notification similar to this will be sent to the specified Discord webhook URL:
+Contributions are welcome! Please feel free to submit issues or pull requests.
 
-```
-----------------------------------------
-🚨 Network Threshold Exceeded! 🚨
-----------------------------------------
-📊 Current Speed: 125.67 Mbps (Threshold: 100.00 Mbps)
-⏰ Time: 2024-07-28 15:30:00 UTC
+## License
 
-🔝 Top 5 Talkers (IP: Bytes):
-1.  192.168.1.100: 5.2 GB
-2.  10.0.0.5: 2.1 GB
-3.  8.8.8.8: 800.5 MB
-4.  172.16.10.20: 450.1 MB
-5.  1.1.1.1: 300.0 MB
-----------------------------------------
-```
-*(Note: The exact format might vary slightly depending on implementation details.)* 
+(Optional: Add your license information here, e.g., MIT License)
