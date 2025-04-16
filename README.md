@@ -13,6 +13,7 @@ A simple Go application to monitor network traffic speed on a specified interfac
 *   Reports monitoring results at a regular interval.
 *   Identifies top N network talkers (based on bytes transferred).
 *   Optional webhook integration for alerts when the threshold is exceeded.
+*   Prometheus metrics endpoint for monitoring and alerting.
 *   Configuration via a YAML file (`config.yaml`), environment variables, or command-line flags.
 
 ## Prerequisites
@@ -57,6 +58,8 @@ cp config.yaml.example config.yaml
 *   `interval_seconds`: The monitoring interval in seconds.
 *   `webhook_url`: (Optional) The URL to send a POST request to when the threshold is exceeded.
 *   `top_n`: The number of top talkers (IP addresses) to report based on traffic volume during the interval.
+*   `metrics_enabled`: Whether to enable the Prometheus metrics endpoint (default: true).
+*   `metrics_port`: The port on which to expose the Prometheus metrics (default: "9090").
 
 See `internal/config/config.go` and `config.yaml.example` for all options.
 
@@ -79,6 +82,28 @@ sudo setcap cap_net_raw,cap_net_admin=eip ./network-monitor
 ```
 
 *(Adjust `setcap` command based on your specific OS and security practices)*
+
+## Prometheus Integration
+
+The application exposes metrics through a Prometheus endpoint that can be used for monitoring and alerting. By default, the metrics are exposed at `http://localhost:9090/metrics`.
+
+### Available Metrics
+
+* `network_speed_mbps` - Current network speed in Mbps
+* `network_traffic_bytes_total` - Total network traffic in bytes
+* `network_top_talkers_mbps` - Top network talkers by speed in Mbps
+* `network_threshold_exceeded` - Whether the network speed threshold is exceeded (1 for yes, 0 for no)
+
+### Prometheus Configuration
+
+To scrape these metrics with Prometheus, add the following to your `prometheus.yml` configuration:
+
+```yaml
+scrape_configs:
+  - job_name: 'network-monitor'
+    static_configs:
+      - targets: ['localhost:9090']
+```
 
 ## Contributing
 

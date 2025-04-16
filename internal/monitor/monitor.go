@@ -7,6 +7,7 @@ import (
 	"network-monitor/internal/capture"
 	"network-monitor/internal/config"
 	"network-monitor/internal/discord"
+	"network-monitor/internal/metrics"
 	"sort"
 
 	"github.com/google/gopacket"
@@ -21,6 +22,7 @@ type Monitor struct {
 	aggregator    *analysis.Aggregator
 	resultsChan   <-chan map[string]*analysis.TrafficData
 	stopChan      chan struct{}
+	metricsServer *metrics.MetricsServer
 }
 
 func NewMonitor(cfg *config.Config) (*Monitor, error) {
@@ -43,7 +45,6 @@ func NewMonitor(cfg *config.Config) (*Monitor, error) {
 	}
 
 	if cfg.InterfaceName == "" && handle != nil {
-
 		log.Printf("Monitoring on automatically selected interface. Check logs for name.")
 		m.interfaceName = "Auto-Selected"
 	} else {
@@ -52,6 +53,13 @@ func NewMonitor(cfg *config.Config) (*Monitor, error) {
 
 	log.Printf("Monitor initialized. Interface: %s, Threshold: %.2f Mbps, Interval: %ds, TopN: %d",
 		m.interfaceName, m.cfg.ThresholdMbps, m.cfg.IntervalSeconds, m.cfg.TopN)
+
+	// Initialize Prometheus metrics server if enabled
+	if cfg.MetricsEnabled {
+		m.metricsServer = metrics.NewMetricsServer(cfg.MetricsPort)
+		m.metricsServer.Start()
+		log.Printf("Prometheus metrics endpoint initialized on port %s", cfg.MetricsPort)
+	}
 
 	go func() {
 		err := discord.SendInitNotification(m.cfg.WebhookURL, m.interfaceName, m.cfg.ThresholdMbps, m.cfg.IntervalSeconds)
@@ -98,6 +106,17 @@ func (m *Monitor) processIntervalData(intervalData map[string]*analysis.TrafficD
 
 	log.Printf("Interval Check: Duration=%.2fs, Total Bytes=%d, Overall Speed=%.2f Mbps",
 		interval.Seconds(), overallBytes, overallSpeedMbps)
+
+	// Update Prometheus metrics if enabled
+	if m.cfg.MetricsEnabled {
+		metrics.UpdateNetworkSpeed(m.interfaceName, overallSpeedMbps)
+		metrics.UpdateNetworkTraffic(m.interfaceName, overallBytes)
+		metrics.UpdateTopTalkers(m.interfaceName, ipSpeeds)
+
+		// Set threshold exceeded status
+		thresholdExceeded := overallSpeedMbps > m.cfg.ThresholdMbps
+		metrics.UpdateThresholdStatus(thresholdExceeded)
+	}
 
 	if overallSpeedMbps > m.cfg.ThresholdMbps {
 		m.notifyThresholdExceeded(overallSpeedMbps, ipSpeeds)
@@ -149,6 +168,11 @@ func (m *Monitor) Close() {
 
 	if m.aggregator != nil {
 		m.aggregator.Stop()
+	}
+
+	// Stop metrics server if it was started
+	if m.metricsServer != nil {
+		m.metricsServer.Stop()
 	}
 
 	log.Println("Monitor closed.")

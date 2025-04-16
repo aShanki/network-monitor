@@ -20,4 +20,10 @@ webhook_url: ""
 interval_seconds: 60
 
 # Number of top IP addresses (talkers) to report in notifications.
-top_n: 5 
+top_n: 5
+
+# Enable Prometheus metrics endpoint
+metrics_enabled: true
+
+# Port for Prometheus metrics endpoint
+metrics_port: "9090" 
