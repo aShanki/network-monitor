@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	// Define metrics
 	networkSpeed = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "network_speed_mbps",
@@ -45,12 +44,10 @@ var (
 	)
 )
 
-// MetricsServer handles HTTP server for Prometheus metrics
 type MetricsServer struct {
 	server *http.Server
 }
 
-// NewMetricsServer creates a new metrics server
 func NewMetricsServer(port string) *MetricsServer {
 	if port == "" {
 		port = "9090"
@@ -69,7 +66,6 @@ func NewMetricsServer(port string) *MetricsServer {
 	}
 }
 
-// Start starts the metrics server
 func (m *MetricsServer) Start() {
 	go func() {
 		log.Printf("Starting Prometheus metrics server on %s", m.server.Addr)
@@ -79,7 +75,6 @@ func (m *MetricsServer) Start() {
 	}()
 }
 
-// Stop stops the metrics server
 func (m *MetricsServer) Stop() {
 	log.Println("Stopping metrics server...")
 	ctx, cancel := contextWithTimeout(5 * time.Second)
@@ -90,33 +85,27 @@ func (m *MetricsServer) Stop() {
 	}
 }
 
-// contextWithTimeout returns a context with timeout
 func contextWithTimeout(timeout time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), timeout)
 }
 
-// UpdateNetworkSpeed updates the network speed metrics
 func UpdateNetworkSpeed(interfaceName string, speedMbps float64) {
 	networkSpeed.WithLabelValues(interfaceName, "total").Set(speedMbps)
 }
 
-// UpdateNetworkTraffic updates the network traffic metrics
 func UpdateNetworkTraffic(interfaceName string, bytes int64) {
 	networkTraffic.WithLabelValues(interfaceName, "total").Add(float64(bytes))
 }
 
-// UpdateTopTalkers updates the top talkers metrics
 func UpdateTopTalkers(interfaceName string, ipSpeeds map[string]float64) {
-	// Reset all top talker metrics
+
 	topTalkers.Reset()
 
-	// Set new values
 	for ip, speed := range ipSpeeds {
 		topTalkers.WithLabelValues(interfaceName, ip).Set(speed)
 	}
 }
 
-// UpdateThresholdStatus updates the threshold exceeded metric
 func UpdateThresholdStatus(exceeded bool) {
 	if exceeded {
 		thresholdExceeded.Set(1)

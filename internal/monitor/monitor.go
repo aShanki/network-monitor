@@ -54,7 +54,6 @@ func NewMonitor(cfg *config.Config) (*Monitor, error) {
 	log.Printf("Monitor initialized. Interface: %s, Threshold: %.2f Mbps, Interval: %ds, TopN: %d",
 		m.interfaceName, m.cfg.ThresholdMbps, m.cfg.IntervalSeconds, m.cfg.TopN)
 
-	// Initialize Prometheus metrics server if enabled
 	if cfg.MetricsEnabled {
 		m.metricsServer = metrics.NewMetricsServer(cfg.MetricsPort)
 		m.metricsServer.Start()
@@ -107,13 +106,11 @@ func (m *Monitor) processIntervalData(intervalData map[string]*analysis.TrafficD
 	log.Printf("Interval Check: Duration=%.2fs, Total Bytes=%d, Overall Speed=%.2f Mbps",
 		interval.Seconds(), overallBytes, overallSpeedMbps)
 
-	// Update Prometheus metrics if enabled
 	if m.cfg.MetricsEnabled {
 		metrics.UpdateNetworkSpeed(m.interfaceName, overallSpeedMbps)
 		metrics.UpdateNetworkTraffic(m.interfaceName, overallBytes)
 		metrics.UpdateTopTalkers(m.interfaceName, ipSpeeds)
 
-		// Set threshold exceeded status
 		thresholdExceeded := overallSpeedMbps > m.cfg.ThresholdMbps
 		metrics.UpdateThresholdStatus(thresholdExceeded)
 	}
@@ -170,7 +167,6 @@ func (m *Monitor) Close() {
 		m.aggregator.Stop()
 	}
 
-	// Stop metrics server if it was started
 	if m.metricsServer != nil {
 		m.metricsServer.Stop()
 	}

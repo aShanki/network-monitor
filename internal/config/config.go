@@ -20,7 +20,6 @@ type Config struct {
 
 	TopN int `mapstructure:"top_n"`
 
-	// Prometheus metrics configuration
 	MetricsEnabled bool   `mapstructure:"metrics_enabled"`
 	MetricsPort    string `mapstructure:"metrics_port"`
 
@@ -35,7 +34,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("webhook_url", "")
 	viper.SetDefault("interval_seconds", 60)
 	viper.SetDefault("top_n", 5)
-	// Default Prometheus settings
+
 	viper.SetDefault("metrics_enabled", true)
 	viper.SetDefault("metrics_port", "9090")
 
@@ -45,7 +44,7 @@ func LoadConfig() (*Config, error) {
 	pflag.String("webhook_url", viper.GetString("webhook_url"), "Discord webhook URL")
 	pflag.Int("interval_seconds", viper.GetInt("interval_seconds"), "Monitoring interval in seconds")
 	pflag.Int("top_n", viper.GetInt("top_n"), "Number of top talkers to report")
-	// Add Prometheus flags
+
 	pflag.Bool("metrics_enabled", viper.GetBool("metrics_enabled"), "Enable Prometheus metrics endpoint")
 	pflag.String("metrics_port", viper.GetString("metrics_port"), "Port for Prometheus metrics endpoint")
 
