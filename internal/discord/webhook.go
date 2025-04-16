@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"time"
@@ -111,5 +112,62 @@ func SendDiscordNotification(webhookURL string, topTalkers map[string]float64, t
 	}
 
 	fmt.Println("Successfully sent notification to Discord.")
+	return nil
+}
+
+// SendInitNotification sends a startup message to the specified Discord webhook URL.
+func SendInitNotification(webhookURL, interfaceName string, thresholdMbps float64, intervalSeconds int) error {
+	if webhookURL == "" {
+		log.Println("Webhook URL is empty, skipping initialization notification.")
+		return nil // Not an error, just skipping
+	}
+
+	description := fmt.Sprintf(
+		"Network Monitor started.\nMonitoring Interface: **%s**\nThreshold: **%.2f Mbps**\nCheck Interval: **%ds**",
+		interfaceName, thresholdMbps, intervalSeconds,
+	)
+	if interfaceName == "" {
+		description = fmt.Sprintf(
+			"Network Monitor started.\nMonitoring Interface: **Auto-Selected**\nThreshold: **%.2f Mbps**\nCheck Interval: **%ds**",
+			thresholdMbps, intervalSeconds,
+		)
+	}
+
+	embed := discordEmbed{
+		Title:       "🚀 Monitor Initialized",
+		Description: description,
+		Color:       3447003, // Blue color
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	payload := discordWebhookPayload{
+		Username: "Network Monitor",
+		Embeds:   []discordEmbed{embed},
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal init discord payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", webhookURL, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return fmt.Errorf("failed to create init http request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send init discord notification: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("received non-2xx status code from discord on init: %d %s - %s", resp.StatusCode, resp.Status, string(bodyBytes))
+	}
+
+	log.Println("Successfully sent initialization notification to Discord.")
 	return nil
 }

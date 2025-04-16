@@ -3,8 +3,11 @@ package monitor
 import (
 	"fmt"
 	"log"
-	"network-monitor/internal/capture" // Assuming internal/capture is in the module path
-	"time"
+	"network-monitor/internal/analysis"
+	"network-monitor/internal/capture"
+	"network-monitor/internal/config"  // Need full config
+	"network-monitor/internal/discord" // Need discord functions
+	"sort"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
@@ -12,105 +15,163 @@ import (
 
 // Monitor holds the state and configuration for network monitoring.
 type Monitor struct {
-	interfaceName  string
-	thresholdBytes float64 // Bytes per second
-	interval       time.Duration
-	handle         *pcap.Handle
-	packetSource   *gopacket.PacketSource
+	cfg           *config.Config // Store the full config
+	interfaceName string
+	handle        *pcap.Handle
+	packetSource  *gopacket.PacketSource
+	aggregator    *analysis.Aggregator
+	resultsChan   <-chan map[string]*analysis.TrafficData
+	stopChan      chan struct{}
 }
 
 // NewMonitor creates and initializes a new Monitor instance.
-func NewMonitor(iface string, threshold float64, interval time.Duration) (*Monitor, error) {
-	pktSource, handle, err := capture.StartCapture(iface)
+func NewMonitor(cfg *config.Config) (*Monitor, error) {
+	pktSource, handle, err := capture.StartCapture(cfg.InterfaceName)
 	if err != nil {
 		return nil, fmt.Errorf("could not start capture: %w", err)
 	}
 
+	// Create the aggregator
+	aggCfg := &analysis.ConfigForAggregator{IntervalSeconds: cfg.IntervalSeconds}
+	agg, resultsChan := analysis.NewAggregator(aggCfg, pktSource, log.Default())
+
 	m := &Monitor{
-		interfaceName:  iface, // Store the actual interface name used
-		thresholdBytes: threshold,
-		interval:       interval,
-		handle:         handle,
-		packetSource:   pktSource,
-	}
-	// Assign the actually used interface name if one wasn't specified
-	if iface == "" && handle != nil {
-		// This relies on StartCapture logging the used interface,
-		// a cleaner approach might be to have StartCapture return it.
-		// For now, let's assume StartCapture correctly logged it or was given one.
-		// If StartCapture modifies interfaceName passed to it, we need to handle that.
-		// A better way: StartCapture could return the used interface name.
-		// TODO: Modify StartCapture to return the used interface name.
-		log.Printf("Monitoring on automatically selected interface. Check logs for name.")
-	} else {
-		m.interfaceName = iface
+		cfg:           cfg,
+		interfaceName: cfg.InterfaceName, // Store the potentially auto-selected name later
+		handle:        handle,
+		packetSource:  pktSource,
+		aggregator:    agg,
+		resultsChan:   resultsChan,
+		stopChan:      make(chan struct{}),
 	}
 
-	log.Printf("Monitor initialized. Interface: %s, Threshold: %.2f B/s, Interval: %s",
-		m.interfaceName, m.thresholdBytes, m.interval)
+	// Assign the actually used interface name if one wasn't specified
+	if cfg.InterfaceName == "" && handle != nil {
+		// TODO: Modify StartCapture to return the used interface name.
+		// For now, assume it was logged, and we'll use "Auto-Selected" for notifications.
+		log.Printf("Monitoring on automatically selected interface. Check logs for name.")
+		m.interfaceName = "Auto-Selected" // Use a placeholder for display
+	} else {
+		m.interfaceName = cfg.InterfaceName // Use the one from config
+	}
+
+	log.Printf("Monitor initialized. Interface: %s, Threshold: %.2f Mbps, Interval: %ds, TopN: %d",
+		m.interfaceName, m.cfg.ThresholdMbps, m.cfg.IntervalSeconds, m.cfg.TopN)
+
+	// Send initialization notification
+	go func() {
+		err := discord.SendInitNotification(m.cfg.WebhookURL, m.interfaceName, m.cfg.ThresholdMbps, m.cfg.IntervalSeconds)
+		if err != nil {
+			log.Printf("Error sending Discord init notification: %v", err)
+		}
+	}()
 
 	return m, nil
 }
 
 // Run starts the continuous monitoring process.
-// It calculates traffic speed over the specified interval and logs a message
-// if the speed exceeds the threshold.
+// It consumes results from the aggregator and sends notifications immediately
+// if the threshold is exceeded.
 func (m *Monitor) Run() {
-	defer m.handle.Close() // Ensure the handle is closed when Run() exits
-
-	ticker := time.NewTicker(m.interval)
-	defer ticker.Stop()
-
-	var bytesSinceLastTick int64
-	intervalStartTime := time.Now()
-
 	log.Printf("Starting monitoring loop...")
 
 	for {
 		select {
-		case <-ticker.C:
-			// Calculate speed for the completed interval
-			elapsedTime := time.Since(intervalStartTime).Seconds()
-			if elapsedTime == 0 {
-				continue // Avoid division by zero if the interval is extremely short
-			}
-
-			speedBytesPerSec := float64(bytesSinceLastTick) / elapsedTime
-			log.Printf("Interval Check: Duration=%.2fs, Bytes=%d, Speed=%.2f B/s",
-				elapsedTime, bytesSinceLastTick, speedBytesPerSec)
-
-			// Check against threshold
-			if speedBytesPerSec > m.thresholdBytes {
-				m.notifyThresholdExceeded(speedBytesPerSec)
-			}
-
-			// Reset for the next interval
-			bytesSinceLastTick = 0
-			intervalStartTime = time.Now()
-
-		case packet, ok := <-m.packetSource.Packets():
+		case intervalData, ok := <-m.resultsChan:
 			if !ok {
-				log.Println("Packet source closed.")
-				return // Exit if the packet source is closed
+				log.Println("Aggregator results channel closed. Monitor stopping.")
+				return
 			}
-			// Accumulate packet size
-			bytesSinceLastTick += int64(len(packet.Data()))
+			// Process the aggregated data for the interval
+			m.processIntervalData(intervalData)
+
+		case <-m.stopChan:
+			log.Println("Monitor stopping loop.")
+			return
 		}
 	}
 }
 
-// notifyThresholdExceeded is called when the traffic speed exceeds the threshold.
-func (m *Monitor) notifyThresholdExceeded(currentSpeed float64) {
-	// For now, just log a warning. This can be extended later.
-	log.Printf("ALERT: Network speed threshold exceeded! Current: %.2f B/s, Threshold: %.2f B/s",
-		currentSpeed, m.thresholdBytes)
+// processIntervalData calculates speeds, checks threshold, and sends notifications.
+func (m *Monitor) processIntervalData(intervalData map[string]*analysis.TrafficData) {
+	interval := m.cfg.GetIntervalDuration()
+	overallBytes := int64(0)
+	ipSpeeds := make(map[string]float64) // IP -> Speed (Mbps)
+
+	for ip, data := range intervalData {
+		overallBytes += data.Bytes
+		ipSpeedMbps := analysis.CalculateSpeedMbps(data.Bytes, interval)
+		ipSpeeds[ip] = ipSpeedMbps
+	}
+
+	overallSpeedMbps := analysis.CalculateSpeedMbps(overallBytes, interval)
+
+	log.Printf("Interval Check: Duration=%.2fs, Total Bytes=%d, Overall Speed=%.2f Mbps",
+		interval.Seconds(), overallBytes, overallSpeedMbps)
+
+	// Check against threshold
+	if overallSpeedMbps > m.cfg.ThresholdMbps {
+		m.notifyThresholdExceeded(overallSpeedMbps, ipSpeeds)
+	}
+}
+
+// notifyThresholdExceeded logs the alert and sends a Discord notification.
+func (m *Monitor) notifyThresholdExceeded(currentSpeedMbps float64, ipSpeeds map[string]float64) {
+	log.Printf("ALERT: Network speed threshold exceeded! Current: %.2f Mbps, Threshold: %.2f Mbps",
+		currentSpeedMbps, m.cfg.ThresholdMbps)
+
+	if m.cfg.WebhookURL == "" {
+		return // Don't attempt notification if URL is not set
+	}
+
+	// Prepare top talkers data
+	type ipSpeedPair struct {
+		IP    string
+		Speed float64 // Mbps
+	}
+	var sortedTalkers []ipSpeedPair
+	for ip, speed := range ipSpeeds {
+		sortedTalkers = append(sortedTalkers, ipSpeedPair{IP: ip, Speed: speed})
+	}
+	sort.Slice(sortedTalkers, func(i, j int) bool {
+		return sortedTalkers[i].Speed > sortedTalkers[j].Speed
+	})
+
+	topN := m.cfg.TopN
+	if len(sortedTalkers) < topN {
+		topN = len(sortedTalkers)
+	}
+
+	topTalkersMap := make(map[string]float64)
+	for i := 0; i < topN; i++ {
+		topTalkersMap[sortedTalkers[i].IP] = sortedTalkers[i].Speed
+	}
+
+	// Send notification in a separate goroutine to avoid blocking the monitor loop
+	go func() {
+		err := discord.SendDiscordNotification(m.cfg.WebhookURL, topTalkersMap, m.cfg.ThresholdMbps, m.cfg.IntervalSeconds)
+		if err != nil {
+			log.Printf("Error sending Discord threshold notification: %v", err)
+		}
+	}()
 }
 
 // Close manually stops the capture and closes the handle.
 func (m *Monitor) Close() {
-	if m.handle != nil {
-		log.Println("Closing pcap handle.")
-		m.handle.Close()
-		m.handle = nil // Prevent double closing
+	log.Println("Monitor Close requested.")
+	// Signal the run loop to stop
+	close(m.stopChan)
+
+	// Stop the aggregator (which will close the results channel)
+	if m.aggregator != nil {
+		m.aggregator.Stop()
 	}
+
+	// The packet source is owned by the aggregator now, no need to close handle here
+	// if m.handle != nil {
+	// 	log.Println("Closing pcap handle.")
+	// 	m.handle.Close()
+	// 	m.handle = nil // Prevent double closing
+	// }
+	log.Println("Monitor closed.")
 }
