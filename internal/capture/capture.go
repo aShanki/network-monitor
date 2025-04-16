@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/gopacket"
@@ -38,8 +39,8 @@ func StartCapture(interfaceName string) (*gopacket.PacketSource, *pcap.Handle, e
 
 		// Use the first available device that's not loopback
 		for _, device := range devices {
-			// Skip loopback interfaces
-			if (device.Flags & pcap.FlagLoopback) == pcap.FlagLoopback {
+			// Skip loopback interfaces by checking the name prefix "lo"
+			if strings.HasPrefix(device.Name, "lo") {
 				continue
 			}
 			// Skip interfaces without IP addresses (often virtual)
@@ -59,7 +60,7 @@ func StartCapture(interfaceName string) (*gopacket.PacketSource, *pcap.Handle, e
 	handle, err = pcap.OpenLive(interfaceName, snapshotLen, promiscuous, timeout)
 	if err != nil {
 		// Common error on Linux without sufficient privileges
-		if errors.Is(err, pcap.ErrPermissionDenied) {
+		if strings.Contains(strings.ToLower(err.Error()), "permission denied") {
 			return nil, nil, fmt.Errorf("permission denied opening interface %s. Run with sudo or set capabilities (e.g., sudo setcap cap_net_raw,cap_net_admin=eip <your_binary>)", interfaceName)
 		}
 		return nil, nil, fmt.Errorf("error opening device %s: %w", interfaceName, err)

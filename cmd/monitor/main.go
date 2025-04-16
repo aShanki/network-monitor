@@ -19,6 +19,7 @@ func main() {
 	flag.Parse()
 
 	log.Println("Starting network monitor...")
+	log.Printf("Configuration: Interface='%s', Threshold=%.2f B/s, Interval=%s", *interfaceName, *threshold, (*interval).String())
 
 	// Create the monitor
 	m, err := monitor.NewMonitor(*interfaceName, *threshold, *interval)
