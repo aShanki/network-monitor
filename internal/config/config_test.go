@@ -12,13 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to reset Viper and pflag state between tests
 func resetViper() {
 	viper.Reset()
-	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError) // Reset pflag
+	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 }
 
-// Helper function to create a temporary config file
 func createTempConfigFile(t *testing.T, content string) string {
 	t.Helper()
 	tmpDir := t.TempDir()
@@ -28,14 +26,13 @@ func createTempConfigFile(t *testing.T, content string) string {
 	return tmpFile
 }
 
-// TestLoadConfigDefaults tests loading configuration with default values.
 func TestLoadConfigDefaults(t *testing.T) {
 	resetViper()
 	cfg, err := LoadConfig()
 	assert.NoError(t, err)
 	require.NotNil(t, cfg)
 
-	assert.Equal(t, "", cfg.InterfaceName) // Default interface
+	assert.Equal(t, "", cfg.InterfaceName)
 	assert.Equal(t, 100.0, cfg.ThresholdMbps)
 	assert.Equal(t, "", cfg.WebhookURL)
 	assert.Equal(t, 60, cfg.IntervalSeconds)
@@ -43,7 +40,6 @@ func TestLoadConfigDefaults(t *testing.T) {
 	assert.Equal(t, time.Duration(60)*time.Second, cfg.GetIntervalDuration())
 }
 
-// TestLoadConfigFromFile tests loading configuration primarily from a file.
 func TestLoadConfigFromFile(t *testing.T) {
 	resetViper()
 	configFileContent := `
@@ -55,7 +51,6 @@ top_n: 3
 `
 	configFile := createTempConfigFile(t, configFileContent)
 
-	// Set the config flag
 	pflag.Set("config", configFile)
 
 	cfg, err := LoadConfig()
@@ -71,7 +66,6 @@ top_n: 3
 	assert.Equal(t, time.Duration(30)*time.Second, cfg.GetIntervalDuration())
 }
 
-// TestLoadConfigEnvVars tests loading configuration primarily from environment variables.
 func TestLoadConfigEnvVars(t *testing.T) {
 	resetViper()
 
@@ -92,11 +86,9 @@ func TestLoadConfigEnvVars(t *testing.T) {
 	assert.Equal(t, 10, cfg.TopN)
 }
 
-// TestLoadConfigFlags tests loading configuration primarily from command-line flags.
 func TestLoadConfigFlags(t *testing.T) {
 	resetViper()
 
-	// Simulate setting flags (we don't actually parse os.Args, Viper does it internally)
 	pflag.String("interface", "", "")
 	pflag.Float64("threshold_mbps", 0, "")
 	pflag.String("webhook_url", "", "")
@@ -120,13 +112,9 @@ func TestLoadConfigFlags(t *testing.T) {
 	assert.Equal(t, 2, cfg.TopN)
 }
 
-// TestLoadConfigPrecedence tests the precedence order (Flag > Env > File > Default).
 func TestLoadConfigPrecedence(t *testing.T) {
 	resetViper()
 
-	// 1. Default values are set internally
-
-	// 2. File values
 	configFileContent := `
 interface: "file_iface"
 threshold_mbps: 50.0
@@ -135,15 +123,13 @@ interval_seconds: 600
 top_n: 50
 `
 	configFile := createTempConfigFile(t, configFileContent)
-	pflag.Set("config", configFile) // Point to the config file
+	pflag.Set("config", configFile)
 
-	// 3. Environment variables (should override file)
 	t.Setenv("NM_INTERFACE", "env_iface")
 	t.Setenv("NM_THRESHOLD_MBPS", "123.4")
-	// Don't set webhook_url or interval_seconds env, file value should persist
+
 	t.Setenv("NM_TOP_N", "10")
 
-	// 4. Flags (should override env and file)
 	pflag.String("interface", "", "")
 	pflag.Float64("threshold_mbps", 0, "")
 	pflag.String("webhook_url", "", "")
@@ -151,23 +137,20 @@ top_n: 50
 	pflag.Int("top_n", 0, "")
 
 	pflag.Set("interface", "flag_iface")
-	// Don't set threshold_mbps flag, env value should persist
-	pflag.Set("webhook_url", "http://flag.hook") // Should override file value
-	// Don't set interval_seconds flag, file value should persist
-	// Don't set top_n flag, env value should persist
+
+	pflag.Set("webhook_url", "http://flag.hook")
 
 	cfg, err := LoadConfig()
 	assert.NoError(t, err)
 	require.NotNil(t, cfg)
 
-	assert.Equal(t, "flag_iface", cfg.InterfaceName)    // Flag wins
-	assert.Equal(t, 123.4, cfg.ThresholdMbps)           // Env wins
-	assert.Equal(t, "http://flag.hook", cfg.WebhookURL) // Flag wins
-	assert.Equal(t, 600, cfg.IntervalSeconds)           // File wins
-	assert.Equal(t, 10, cfg.TopN)                       // Env wins
+	assert.Equal(t, "flag_iface", cfg.InterfaceName)
+	assert.Equal(t, 123.4, cfg.ThresholdMbps)
+	assert.Equal(t, "http://flag.hook", cfg.WebhookURL)
+	assert.Equal(t, 600, cfg.IntervalSeconds)
+	assert.Equal(t, 10, cfg.TopN)
 }
 
-// TestLoadConfigValidation tests the validation rules in LoadConfig.
 func TestLoadConfigValidation(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -216,12 +199,10 @@ func TestLoadConfigValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resetViper()
 
-			// Set environment variables
 			for k, v := range tc.envVars {
 				t.Setenv(k, v)
 			}
 
-			// Define and set flags
 			pflag.String("interface", "", "")
 			pflag.Float64("threshold_mbps", 0, "")
 			pflag.String("webhook_url", "", "")
@@ -246,11 +227,9 @@ func TestLoadConfigValidation(t *testing.T) {
 	}
 }
 
-// TestLoadConfigFileNotFound tests behavior when a specified config file doesn't exist.
 func TestLoadConfigFileNotFound(t *testing.T) {
 	resetViper()
 
-	// Set the config flag to a non-existent file
 	pflag.Set("config", "non_existent_config.yaml")
 
 	_, err := LoadConfig()
@@ -258,13 +237,11 @@ func TestLoadConfigFileNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "config file specified but not found")
 }
 
-// TestLoadConfigBadFileFormat tests behavior with an invalid config file format.
 func TestLoadConfigBadFileFormat(t *testing.T) {
 	resetViper()
 	configFileContent := `this: is: not: valid: yaml`
 	configFile := createTempConfigFile(t, configFileContent)
 
-	// Set the config flag
 	pflag.Set("config", configFile)
 
 	_, err := LoadConfig()
