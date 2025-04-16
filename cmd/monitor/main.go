@@ -1,38 +1,92 @@
 package main
 
 import (
-	"context"
 	"log"
-	"network-monitor/internal/capture"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
-	"time"
 
-	"github.com/google/gopacket"
+	"network-monitor/internal/analysis"
+	"network-monitor/internal/capture"
 )
+
+// Temporary Config struct until Task 3.2 is done
+type TempConfig struct {
+	InterfaceName   string
+	IntervalSeconds int
+	// Add other fields like Threshold, WebhookURL later
+}
 
 func main() {
 	log.Println("Starting network monitor...")
 
-	// Interface name can be overridden by config/flags later.
-	// Pass empty string to auto-detect.
-	interfaceName := ""
+	// TODO: Replace with proper config loading (Task 3.2)
+	cfg := &TempConfig{
+		InterfaceName:   "", // Auto-detect
+		IntervalSeconds: 5,  // Example: 5-second interval
+	}
 
-	packetSource, handle, err := capture.StartCapture(interfaceName)
+	// Use configured interface name
+	packetSource, handle, err := capture.StartCapture(cfg.InterfaceName)
 	if err != nil {
 		log.Fatalf("Failed to start capture: %v", err)
 	}
 	defer handle.Close()
 
-	log.Println("Packet capture started successfully. Waiting for packets...")
+	log.Println("Packet capture started successfully.")
 
-	// Create a context that can be cancelled
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // Ensure cancel is called eventually
+	// Setup WaitGroup for graceful shutdown
+	var wg sync.WaitGroup
 
-	// Goroutine to process packets
-	go processPackets(ctx, packetSource)
+	// Create Aggregator
+	// Convert TempConfig to the expected config.Config for NewAggregator
+	// This requires defining the config.Config struct or adjusting NewAggregator signature temporarily
+	// Let's assume config.Config has at least IntervalSeconds for now
+	// We'll need to create internal/config/config.go eventually
+	// For now, let's simulate it inline or assume NewAggregator is flexible enough
+	// --- SIMULATION START (Replace with actual config pkg later) ---
+	// type SimConfig struct { // Simulate config.Config
+	// 	IntervalSeconds int
+	// }
+	// simCfg := &SimConfig{IntervalSeconds: cfg.IntervalSeconds} // Remove unused variable
+	// --- SIMULATION END ---
+
+	// Pass packetSource and simulated config to NewAggregator
+	// Note: NewAggregator expects *config.Config, we'll need to adjust this or create the actual config package
+	// For demonstration, let's imagine NewAggregator could take SimConfig (or we adjust it)
+	// Assuming NewAggregator needs adjustment or config package is created:
+	// Assuming analysis.NewAggregator is updated to take an interface or specific fields.
+	// Let's proceed assuming we'll create config.go next or NewAggregator is adjusted.
+	// For now, this might cause a compile error until config is sorted.
+
+	// We need a logger
+	logger := log.New(os.Stdout, "ANALYSIS: ", log.LstdFlags)
+
+	// Start the aggregator - this now handles packet reading internally
+	aggregator, resultsChan := analysis.NewAggregator(
+		&analysis.ConfigForAggregator{IntervalSeconds: cfg.IntervalSeconds}, // Pass necessary fields directly
+		packetSource,
+		logger,
+	)
+
+	log.Println("Traffic aggregator started.")
+
+	// Goroutine to handle analysis results
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Println("Result processing goroutine started.")
+		for intervalData := range resultsChan {
+			// TODO: Implement Task 3.5 (Threshold check, Top Talkers)
+			log.Printf("Received interval data with %d IP entries\n", len(intervalData))
+			// Example: Print the data
+			// for ip, data := range intervalData {
+			// 	 log.Printf("  IP: %s, Bytes: %d\n", ip, data.Bytes)
+			// }
+		}
+		log.Println("Result processing goroutine finished.")
+	}()
 
 	// Wait for termination signal
 	sigChan := make(chan os.Signal, 1)
@@ -41,38 +95,18 @@ func main() {
 	log.Println("Running. Press Ctrl+C to stop.")
 	<-sigChan // Block until a signal is received
 
-	log.Println("Shutdown signal received, stopping capture...")
-	// Cancel the context to signal the packet processing goroutine to stop
-	cancel()
+	log.Println("Shutdown signal received, stopping components...")
 
-	// Allow some time for goroutines to clean up
-	// In a real app, might use sync.WaitGroup
-	time.Sleep(1 * time.Second)
-	log.Println("Network monitor stopped.")
-}
+	// Signal the aggregator to stop
+	// This will close its internal stopChan, stopping its goroutines
+	// and eventually closing the resultsChan
+	aggregator.Stop()
 
-// processPackets reads packets from the source and handles them.
-// It stops when the context is cancelled.
-func processPackets(ctx context.Context, source *gopacket.PacketSource) {
-	packetCount := 0
-	log.Println("Packet processing goroutine started.")
-	for {
-		select {
-		case <-ctx.Done(): // Check if the context has been cancelled
-			log.Printf("Packet processing stopped. Total packets processed: %d\n", packetCount)
-			return
-		case packet, ok := <-source.Packets():
-			if !ok {
-				log.Println("Packet source channel closed.")
-				return // Exit if the channel is closed
-			}
-			packetCount++
-			// TODO: Process the packet (Task 3.4)
-			// For now, just log occasionally to avoid flooding
-			if packetCount%100 == 0 {
-				log.Printf("Processed %d packets...\n", packetCount)
-			}
-			_ = packet // Use packet variable to avoid unused error
-		}
-	}
+	// The capture handle is closed by defer handle.Close()
+
+	// Wait for the results processing goroutine to finish
+	log.Println("Waiting for goroutines to finish...")
+	wg.Wait()
+
+	log.Println("Network monitor stopped gracefully.")
 }
