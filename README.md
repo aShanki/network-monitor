@@ -2,6 +2,10 @@
 
 A simple Go application to monitor network traffic speed on a specified interface and optionally send alerts via webhook.
 
+## Showcase
+![image](https://github.com/user-attachments/assets/b2a08258-e394-41ad-863c-c4a9a4726c34)
+![image](https://github.com/user-attachments/assets/1b532925-176f-4c3c-b33e-a86c34a684c5)
+
 ## Features
 
 *   Monitors network traffic speed (upload/download).
